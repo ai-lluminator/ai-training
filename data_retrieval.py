@@ -33,6 +33,7 @@ def get_arxiv_papers(search_query, start=0, max_results=100):
     # Extract relevant data from each entry
     papers = []
     for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
+        print(entry)
         title = entry.find("{http://www.w3.org/2005/Atom}title").text.strip()
         published = entry.find("{http://www.w3.org/2005/Atom}published").text.strip()
         summary = entry.find("{http://www.w3.org/2005/Atom}summary").text.strip()
@@ -50,13 +51,13 @@ def get_arxiv_papers(search_query, start=0, max_results=100):
     return papers
 
 def get_chroma_db():
-    chroma_client = chromadb.PersistentClient(path="chromadb")
+    chroma_client = chromadb.PersistentClient(path="chromadb_new")
     sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2", device="mps")
     data_collections = chroma_client.get_or_create_collection("arxiv_data", embedding_function=sentence_transformer_ef)
     return data_collections
 
 number_samples = 1000000
-step_size = 2000
+step_size = 500
 
 for i in tqdm(range(25 * step_size, number_samples, step_size)):
     while True:

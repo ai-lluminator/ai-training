@@ -2,3 +2,6 @@
 /__pycache__
 /chromadb
 **.DS_Store
+*.csv
+*.json
+*.json
