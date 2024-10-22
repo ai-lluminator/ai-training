@@ -62,7 +62,7 @@ class TransformerClassifier(nn.Module):
         return logits
 
 
-user_data = json.load(open("results.json", "r"))
+user_data = json.load(open("/Users/cowolff/Documents/GitHub/AI-lluminator/ai-training/transformer_regressor_reranking/results.json", "r"))
 user_paper_dataset = UserPaperDataset(user_data, sequence_length=6)
 
 batch_size = 4
@@ -70,6 +70,11 @@ num_epochs = 150
 learning_rate = 0.001
 
 embedding_dim = user_paper_dataset.embedding_size()
+
+print(len(user_paper_dataset))
+print(user_paper_dataset[0][0].shape)
+
+exit()
 
 model = TransformerClassifier(embedding_dim, seq_length=user_paper_dataset.sequence_length).to("mps")
 pos_weight = torch.tensor([5.0], device="mps")
