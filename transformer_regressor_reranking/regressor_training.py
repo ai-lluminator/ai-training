@@ -3,6 +3,8 @@ import torch.nn as nn
 import math
 import json
 from regression_dataset import UserPaperDataset
+# Import data_loader
+from torch.utils.data import DataLoader
 import random
 import torch.optim as optim
 
@@ -31,7 +33,7 @@ class PositionalEncoding(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, embedding_dim, seq_length, num_heads=5, num_layers=4, dropout=0.1):
+    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=4, dropout=0.1):
         super(TransformerClassifier, self).__init__()
         self.embedding_dim = embedding_dim
         self.seq_length = seq_length
@@ -63,24 +65,31 @@ class TransformerClassifier(nn.Module):
 
 
 user_data = json.load(open("/Users/cowolff/Documents/GitHub/AI-lluminator/ai-training/transformer_regressor_reranking/results.json", "r"))
-user_paper_dataset = UserPaperDataset(user_data, sequence_length=6)
+user_paper_dataset = UserPaperDataset(user_data, num_decisions=3)
 
 batch_size = 4
-num_epochs = 150
+num_epochs = 200
 learning_rate = 0.001
 
 embedding_dim = user_paper_dataset.embedding_size()
 
-print(len(user_paper_dataset))
-print(user_paper_dataset[0][0].shape)
-
-exit()
+dataLoader = DataLoader(user_paper_dataset, batch_size=batch_size, shuffle=True)
 
 model = TransformerClassifier(embedding_dim, seq_length=user_paper_dataset.sequence_length).to("mps")
 pos_weight = torch.tensor([5.0], device="mps")
 criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)  # For binary classification
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)  # Decrease LR by factor 0.1 every 10 epochs
+
+# Calculate total number of parameters
+total_params = sum(p.numel() for p in model.parameters())
+
+# Print the total number of parameters
+print(f"Total number of parameters: {total_params}")
+
+# Optionally, if you want to print just the trainable parameters:
+trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print(f"Total number of trainable parameters: {trainable_params}")
 
 for epoch in range(num_epochs):
     model.train()  # Set the model to training mode
@@ -93,8 +102,7 @@ for epoch in range(num_epochs):
     class_1_correct = 0
     class_1_total = 0
 
-    for batch_idx in range(len(user_paper_dataset)):
-        user_data, labels = user_paper_dataset[batch_idx]
+    for batch_idx, (user_data, labels) in enumerate(dataLoader):
         logits = model(user_data).squeeze()  # Ensure logits have the correct shape
         loss = criterion(logits, labels.float())  # Convert labels to float if necessary
 

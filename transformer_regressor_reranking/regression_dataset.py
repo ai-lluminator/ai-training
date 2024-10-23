@@ -17,7 +17,7 @@ def get_tensor_index(tensor_list, target_tensor):
     return -1
 
 class UserPaperDataset(Dataset):
-    def __init__(self, user_data, sequence_length=4, device="mps", embedding_model='all-MiniLM-L6-v2'):
+    def __init__(self, user_data, num_decisions=4, device="mps", embedding_model='all-MiniLM-L6-v2'):
         """
         Args:
             user_data (dict): A dictionary containing users and their papers
@@ -25,7 +25,7 @@ class UserPaperDataset(Dataset):
         # Load a pre-trained sentence-transformer model for generating embeddings
         self.model = SentenceTransformer(embedding_model)
 
-        self.sequence_length = sequence_length  # Maximum length of a sequence
+        self.num_decisions = num_decisions  # Maximum length of a sequence
         self.device = device  # Device to use for processing
         
         # Store data as a list of sequences per user
@@ -34,11 +34,11 @@ class UserPaperDataset(Dataset):
         
         for user in user_data:
 
-            for choice_index in range(len(user_data[user]) - sequence_length):
+            for choice_index in range(len(user_data[user]) - num_decisions):
                 # Create the embedding and label pairs for this group of paper
 
                 sequence_embeddings = []
-                for i in range(sequence_length - 1):
+                for i in range(num_decisions - 1):
                     for idx in range(len(user_data[user][choice_index + i]['papers'])):
                         paper = user_data[user][choice_index + i]['papers'][idx]
                         current_label = 1 if idx == user_data[user][choice_index + i]['interesting paper'] - 1 else 0
@@ -47,9 +47,9 @@ class UserPaperDataset(Dataset):
                         sequence = torch.cat((embedding, torch.tensor([current_label], device=embedding.device)), dim=0)
                         sequence_embeddings.append(sequence)
 
-                for test_index in range(len(user_data[user][choice_index + sequence_length]['papers'])):
-                    paper = user_data[user][choice_index + sequence_length]['papers'][test_index]
-                    current_label = 1 if idx == user_data[user][choice_index + sequence_length]['interesting paper'] - 1 else 0
+                for test_index in range(len(user_data[user][choice_index + num_decisions - 1]['papers'])):
+                    paper = user_data[user][choice_index + num_decisions - 1]['papers'][test_index]
+                    current_label = 1 if test_index == user_data[user][choice_index + num_decisions - 1]['interesting paper'] - 1 else 0
                     embedding = self.model.encode(paper, convert_to_tensor=True)
                     sequence = torch.cat((embedding, torch.tensor([-1], device=embedding.device)), dim=0)
 
@@ -59,6 +59,8 @@ class UserPaperDataset(Dataset):
                     new_sequence = torch.stack(new_sequence)
                     self.user_embeddings.append(new_sequence)
                     self.user_labels.append(torch.tensor(current_label, dtype=torch.long, device=sequence.device))
+
+        self.sequence_length = len(self.user_embeddings[0])
 
     def embedding_size(self):
         """Returns the size of the embedding vectors."""
