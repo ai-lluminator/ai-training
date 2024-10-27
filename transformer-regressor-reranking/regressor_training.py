@@ -34,13 +34,14 @@ class PositionalEncoding(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=6, dropout=0.1):
+    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=6, dropout=0.0, pos_encoding=False):
         super(TransformerClassifier, self).__init__()
         self.embedding_dim = embedding_dim
         self.seq_length = seq_length
+        self.pos_encoding = pos_encoding
 
         # Positional Encoding
-        # self.pos_encoder = PositionalEncoding(embedding_dim, max_len=seq_length)
+        self.pos_encoder = PositionalEncoding(embedding_dim, max_len=seq_length)
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(d_model=embedding_dim, nhead=num_heads, dropout=dropout)
@@ -52,7 +53,8 @@ class TransformerClassifier(nn.Module):
 
     def forward(self, x):
         # x shape: [batch_size, seq_length, embedding_dim]
-        # x = self.pos_encoder(x)
+        if self.pos_encoding:
+            x = self.pos_encoder(x)
         # Transformer expects input shape: [seq_length, batch_size, embedding_dim]
         x = x.permute(1, 0, 2)
         x = self.transformer_encoder(x)
