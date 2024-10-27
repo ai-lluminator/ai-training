@@ -166,5 +166,5 @@ try:
 except KeyboardInterrupt:
     print("Data processing interrupted.")
     # Store the results in a file
-    with open("results.json", "w") as f:
+    with open("results_new.json", "w") as f:
         json.dump(results_dict, f, indent=4)
