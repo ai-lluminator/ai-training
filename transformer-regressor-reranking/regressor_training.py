@@ -4,9 +4,10 @@ import math
 import json
 from regression_dataset import UserPaperDataset
 # Import data_loader
-from torch.utils.data import DataLoader
+from torch.utils.data import random_split, DataLoader
 import random
 import torch.optim as optim
+from progressbar import progressbar
 
 class PositionalEncoding(nn.Module):
     def __init__(self, embedding_dim, max_len=5000):
@@ -33,13 +34,13 @@ class PositionalEncoding(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=4, dropout=0.1):
+    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=6, dropout=0.1):
         super(TransformerClassifier, self).__init__()
         self.embedding_dim = embedding_dim
         self.seq_length = seq_length
 
         # Positional Encoding
-        self.pos_encoder = PositionalEncoding(embedding_dim, max_len=seq_length)
+        # self.pos_encoder = PositionalEncoding(embedding_dim, max_len=seq_length)
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(d_model=embedding_dim, nhead=num_heads, dropout=dropout)
@@ -51,7 +52,7 @@ class TransformerClassifier(nn.Module):
 
     def forward(self, x):
         # x shape: [batch_size, seq_length, embedding_dim]
-        x = self.pos_encoder(x)
+        # x = self.pos_encoder(x)
         # Transformer expects input shape: [seq_length, batch_size, embedding_dim]
         x = x.permute(1, 0, 2)
         x = self.transformer_encoder(x)
@@ -64,86 +65,129 @@ class TransformerClassifier(nn.Module):
         return logits
 
 
-user_data = json.load(open("/Users/cowolff/Documents/GitHub/AI-lluminator/ai-training/transformer_regressor_reranking/results.json", "r"))
-user_paper_dataset = UserPaperDataset(user_data, num_decisions=3)
+def train(user_data_path, learning_rate, batch_size=8, num_epochs=300, device="mps"):
+    # Load data
+    user_data = json.load(open(user_data_path, "r"))
+    user_paper_dataset = UserPaperDataset(user_data, num_decisions=3)
 
-batch_size = 4
-num_epochs = 200
-learning_rate = 0.001
+    # Split dataset into training and validation sets
+    train_size = int(0.9 * len(user_paper_dataset))
+    val_size = len(user_paper_dataset) - train_size
+    train_dataset, val_dataset = random_split(user_paper_dataset, [train_size, val_size])
 
-embedding_dim = user_paper_dataset.embedding_size()
+    # Data loaders for training and validation
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-dataLoader = DataLoader(user_paper_dataset, batch_size=batch_size, shuffle=True)
+    # Initialize model and other components
+    embedding_dim = user_paper_dataset.embedding_size()
+    model = TransformerClassifier(embedding_dim, seq_length=user_paper_dataset.sequence_length, dropout=0.0).to(device)
+    pos_weight = torch.tensor([5.0], device=device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
 
-model = TransformerClassifier(embedding_dim, seq_length=user_paper_dataset.sequence_length).to("mps")
-pos_weight = torch.tensor([5.0], device="mps")
-criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)  # For binary classification
-optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)  # Decrease LR by factor 0.1 every 10 epochs
+    # Calculate total number of parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total number of parameters: {total_params}")
+    print(f"Total number of trainable parameters: {trainable_params}")
 
-# Calculate total number of parameters
-total_params = sum(p.numel() for p in model.parameters())
+    def validate():
+        model.eval()  # Set the model to evaluation mode
+        val_loss = 0.0
+        val_corrects = 0
+        val_samples = 0
+        class_0_correct = 0
+        class_0_total = 0
+        class_1_correct = 0
+        class_1_total = 0
 
-# Print the total number of parameters
-print(f"Total number of parameters: {total_params}")
+        with torch.no_grad():
+            for val_data, val_labels in val_loader:
+                logits = model(val_data)
+                loss = criterion(logits, val_labels.float())
+                val_loss += loss.item()
 
-# Optionally, if you want to print just the trainable parameters:
-trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-print(f"Total number of trainable parameters: {trainable_params}")
+                preds = (logits >= 0).float()
+                val_corrects += (preds == val_labels.float()).sum().item()
+                val_samples += val_labels.size(0)
 
-for epoch in range(num_epochs):
-    model.train()  # Set the model to training mode
-    running_loss = 0.0
-    running_corrects = 0
-    running_samples = 0
+                # Class-specific accuracy update
+                for i in range(val_labels.size(0)):
+                    if val_labels[i] == 0:
+                        class_0_total += 1
+                        if preds[i] == val_labels[i]:
+                            class_0_correct += 1
+                    elif val_labels[i] == 1:
+                        class_1_total += 1
+                        if preds[i] == val_labels[i]:
+                            class_1_correct += 1
 
-    class_0_correct = 0
-    class_0_total = 0
-    class_1_correct = 0
-    class_1_total = 0
+        # Validation metrics
+        val_loss /= len(val_loader)
+        val_acc = val_corrects / val_samples
+        class_0_acc = class_0_correct / class_0_total if class_0_total > 0 else 0
+        class_1_acc = class_1_correct / class_1_total if class_1_total > 0 else 0
 
-    for batch_idx, (user_data, labels) in enumerate(dataLoader):
-        logits = model(user_data).squeeze()  # Ensure logits have the correct shape
-        loss = criterion(logits, labels.float())  # Convert labels to float if necessary
+        print(f'Validation Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}')
+        print(f'Validation Class 0 Accuracy: {class_0_acc:.4f}, Class 1 Accuracy: {class_1_acc:.4f}')
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        return val_acc
 
-        running_loss += loss.item()
+    # Training loop
+    for epoch in progressbar(range(num_epochs), redirect_stdout=True):
+        model.train()
+        running_loss = 0.0
+        running_corrects = 0
+        running_samples = 0
+        class_0_correct = 0
+        class_0_total = 0
+        class_1_correct = 0
+        class_1_total = 0
 
-        # Compute predictions for binary classification
-        preds = (logits >= 0).float()  # Threshold logits at zero
+        for user_data, labels in train_loader:
+            logits = model(user_data)
+            loss = criterion(logits, labels.float())
 
-        # Update correct predictions
-        corrects = torch.sum(preds == labels.float()).item()
-        running_corrects += corrects
-        running_samples += labels.size(0)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        # Class-specific accuracy update
-        for i in range(labels.size(0)):
-            if labels[i] == 0:  # Class 0
-                class_0_total += 1
-                if preds[i] == labels[i]:
-                    class_0_correct += 1
-            elif labels[i] == 1:  # Class 1
-                class_1_total += 1
-                if preds[i] == labels[i]:
-                    class_1_correct += 1
+            running_loss += loss.item()
+            preds = (logits >= 0).float()
+            running_corrects += (preds == labels.float()).sum().item()
+            running_samples += labels.size(0)
 
-    epoch_loss = running_loss / 10
-    epoch_acc = running_corrects / running_samples
-    print("-----------")
-    print(f'Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx+1}/{len(user_paper_dataset)}], Loss: {epoch_loss:.4f}, Accuracy: {epoch_acc:.4f}')
-    running_loss = 0.0
-    running_corrects = 0
-    running_samples = 0
+            for i in range(labels.size(0)):
+                if labels[i] == 0:
+                    class_0_total += 1
+                    if preds[i] == labels[i]:
+                        class_0_correct += 1
+                elif labels[i] == 1:
+                    class_1_total += 1
+                    if preds[i] == labels[i]:
+                        class_1_correct += 1
 
-    class_0_acc = class_0_correct / class_0_total if class_0_total > 0 else 0
-    class_1_acc = class_1_correct / class_1_total if class_1_total > 0 else 0
-    print(f'Class 0 Accuracy: {class_0_acc:.4f}, Class 1 Accuracy: {class_1_acc:.4f}')
+        # Training metrics
+        print("\n\n")
+        epoch_loss = running_loss / len(train_loader)
+        epoch_acc = running_corrects / running_samples
+        print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}, Accuracy: {epoch_acc:.4f}')
 
-    scheduler.step()
-    current_lr = optimizer.param_groups[0]['lr']
-    print(f"Epoch [{epoch+1}], Learning Rate: {current_lr:.6f}")
-    print("-----------\n\n")
+        class_0_acc = class_0_correct / class_0_total if class_0_total > 0 else 0
+        class_1_acc = class_1_correct / class_1_total if class_1_total > 0 else 0
+        print(f'Class 0 Accuracy: {class_0_acc:.4f}, Class 1 Accuracy: {class_1_acc:.4f}')
+
+        # Validation step
+        validate()
+
+        print('---------------------------------')
+
+    return epoch_acc
+
+# Usage example:
+accuracies = []
+for lr in [0.00005]:
+    accuracies.append(train("/Users/cowolff/Documents/GitHub/AI-lluminator/ai-training/transformer-regressor-reranking/results.json", learning_rate=lr, batch_size=8, num_epochs=400, device="mps"))
+
+print(accuracies)

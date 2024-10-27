@@ -47,9 +47,9 @@ class UserPaperDataset(Dataset):
                         sequence = torch.cat((embedding, torch.tensor([current_label], device=embedding.device)), dim=0)
                         sequence_embeddings.append(sequence)
 
-                for test_index in range(len(user_data[user][choice_index + num_decisions - 1]['papers'])):
-                    paper = user_data[user][choice_index + num_decisions - 1]['papers'][test_index]
-                    current_label = 1 if test_index == user_data[user][choice_index + num_decisions - 1]['interesting paper'] - 1 else 0
+                for test_index in range(len(user_data[user][choice_index + num_decisions]['papers'])):
+                    paper = user_data[user][choice_index + num_decisions]['papers'][test_index]
+                    current_label = 1 if test_index == user_data[user][choice_index + num_decisions]['interesting paper'] - 1 else 0
                     embedding = self.model.encode(paper, convert_to_tensor=True)
                     sequence = torch.cat((embedding, torch.tensor([-1], device=embedding.device)), dim=0)
 
@@ -57,6 +57,7 @@ class UserPaperDataset(Dataset):
                     new_sequence = copy.deepcopy(sequence_embeddings)
                     new_sequence.append(sequence)
                     new_sequence = torch.stack(new_sequence)
+                    # new_sequence = torch.cat(new_sequence).unsqueeze(0)
                     self.user_embeddings.append(new_sequence)
                     self.user_labels.append(torch.tensor(current_label, dtype=torch.long, device=sequence.device))
 
@@ -64,6 +65,7 @@ class UserPaperDataset(Dataset):
 
     def embedding_size(self):
         """Returns the size of the embedding vectors."""
+        # return self.user_embeddings[0].shape[-1]  # Plus one for the label dimension
         return self.model.encode('test').shape[-1] + 1  # Plus one for the label dimension
         
     def __len__(self):
