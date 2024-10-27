@@ -8,6 +8,7 @@ from torch.utils.data import random_split, DataLoader
 import random
 import torch.optim as optim
 from progressbar import progressbar
+import torch.nn.functional as F
 
 class PositionalEncoding(nn.Module):
     def __init__(self, embedding_dim, max_len=5000):
@@ -34,11 +35,15 @@ class PositionalEncoding(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=6, dropout=0.0, pos_encoding=False):
+    def __init__(self, embedding_dim, seq_length, num_heads=11, num_layers=6, dropout=0.0, pos_encoding=False, pooling='mean'):
         super(TransformerClassifier, self).__init__()
         self.embedding_dim = embedding_dim
         self.seq_length = seq_length
         self.pos_encoding = pos_encoding
+        self.pooling = pooling
+
+        if pooling not in ['mean', 'attention']:
+            raise ValueError(f"Invalid pooling method: {pooling}. Choose from 'mean' or 'attention'.")
 
         # Positional Encoding
         self.pos_encoder = PositionalEncoding(embedding_dim, max_len=seq_length)
@@ -46,6 +51,8 @@ class TransformerClassifier(nn.Module):
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(d_model=embedding_dim, nhead=num_heads, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        self.attention_weights = nn.Parameter(torch.randn(embedding_dim))
 
         # Classification head
         self.fc_out = nn.Linear(embedding_dim, 1)  # Output a single logit for binary classification
@@ -60,8 +67,15 @@ class TransformerClassifier(nn.Module):
         x = self.transformer_encoder(x)
         # Revert back to original shape
         x = x.permute(1, 0, 2)
-        # Pooling over the sequence dimension (mean pooling)
-        x = x.mean(dim=1)
+
+        # Pooling
+        if self.pooling == 'mean':
+            x = x.mean(dim=1)
+        elif self.pooling == 'attention':
+            attn_scores = torch.matmul(x, self.attention_weights)  # Shape: [batch_size, seq_length]
+            attn_weights = F.softmax(attn_scores, dim=1).unsqueeze(-1)  # Shape: [batch_size, seq_length, 1]
+            x = (attn_weights * x).sum(dim=1)
+
         x = self.dropout(x)
         logits = self.fc_out(x).squeeze(-1)  # Output shape: [batch_size]
         return logits
