@@ -17,7 +17,7 @@ def load_data(filepath, limit=None):
 
 def get_chroma_db():
     chroma_client = chromadb.PersistentClient(path="chromadb")
-    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2", device="mps")
+    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2", device="cuda")
     data_collections = chroma_client.get_or_create_collection("arxiv_data", embedding_function=sentence_transformer_ef)
     return data_collections
 

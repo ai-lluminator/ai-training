@@ -87,7 +87,7 @@ def get_qwen_model():
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype="auto",
-        device_map="mps"
+        device_map="cuda"
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     return model, tokenizer
@@ -114,13 +114,12 @@ def prompt_interesting_papers(model, tokenizer, documents, interest, background)
         output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
     ]
     response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    print(response)
     return response
 
 
 def get_chroma_db():
     chroma_client = chromadb.PersistentClient(path="chromadb")
-    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2", device="mps")
+    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2", device="cuda")
     data_collections = chroma_client.get_or_create_collection("arxiv_data", embedding_function=sentence_transformer_ef)
     return data_collections
 
@@ -134,12 +133,12 @@ largest_timestamp, smallest_timestamp = get_timestep_boundries(collection)
 
 agents_list = generate_user_interest()
 
-day_in_seconds = 24 * 60 * 60
+day_in_seconds = -1 * 24 * 60 * 60
 
 results_dict = {user["agent name"]: [] for user in agents_list}
 
 try:
-    for day in tqdm(range(smallest_timestamp, largest_timestamp, day_in_seconds), desc="Processing days"):
+    for day in tqdm(range(largest_timestamp, smallest_timestamp, day_in_seconds), desc="Processing days"):
         # Get the start and end timestamps for the current day
         start_timestamp = day
         end_timestamp = day + day_in_seconds
@@ -150,7 +149,7 @@ try:
         results = collection.query(
             query_texts=interests,
             where={
-                "$and": [{"published": {"$gte": start_timestamp}}, {"published":{"$lte": end_timestamp}}]
+                "$and": [{"published": {"$gte": end_timestamp}}, {"published":{"$lte": start_timestamp}}]
             },
             n_results=6
         )

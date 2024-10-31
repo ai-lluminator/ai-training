@@ -81,7 +81,7 @@ class TransformerClassifier(nn.Module):
         return logits
 
 
-def train(user_data_path, learning_rate, batch_size=8, num_epochs=300, device="mps"):
+def train(user_data_path, learning_rate, batch_size=8, num_epochs=300, device="cuda"):
     # Load data
     user_data = json.load(open(user_data_path, "r"))
     user_paper_dataset = UserPaperDataset(user_data, num_decisions=3)
@@ -204,6 +204,6 @@ def train(user_data_path, learning_rate, batch_size=8, num_epochs=300, device="m
 # Usage example:
 accuracies = []
 for lr in [0.00005]:
-    accuracies.append(train("/Users/cowolff/Documents/GitHub/AI-lluminator/ai-training/transformer-regressor-reranking/results.json", learning_rate=lr, batch_size=8, num_epochs=400, device="mps"))
+    accuracies.append(train("/home/rechenmaschine/cwolff/ai-training/transformer-regressor-reranking/results_new.json", learning_rate=lr, batch_size=8, num_epochs=400, device="cuda"))
 
 print(accuracies)
